@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/DrewRepaskyOlive/loop-sheets/search"
@@ -88,7 +89,7 @@ func (l *Loop) listener(searchCriteria string, err error) {
 // TODO search criteria should be dynamically read, not hardcoded
 const initWhisper = `# I found these spreadsheets and will match their contents when you search within Olive Helps: 
   
-* %s  
+%s  
 
 For instance, try searching on SIDE-1752
 `
@@ -134,7 +135,12 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		return err
 	}
 
-	markdown := fmt.Sprintf(initWhisper, l.csvPaths[0])
+	csvList := ""
+	for i, file := range l.csvPaths {
+		csvList += fmt.Sprintf("%d. %s\n  ", i+1, filepath.Base(file))
+	}
+
+	markdown := fmt.Sprintf(initWhisper, csvList)
 	l.SendWhisper(whisperLabel, markdown)
 	return nil
 }
