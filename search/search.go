@@ -43,22 +43,26 @@ func buildIndexMapping() (mapping.IndexMapping, error) {
 	return indexMapping, nil
 }
 
-func New(logger *ldk.Logger, indexName string, fileContent *sheets.SheetContent) (*Searcher, error) {
+// IndexSheets add sheets to search index
+func (s *Searcher) IndexSheets(fileContents []*sheets.SheetContent) error {
 	start := time.Now()
-	indexMapping, err := buildIndexMapping()
-	if err != nil {
-		return &Searcher{}, err
+
+	for _, fileContent := range fileContents {
+		err := s.indexSheet(fileContent)
+		if err != nil {
+			return err
+		}
 	}
 
-	index, err := bleve.NewMemOnly(indexMapping)
-	// persist the index to disk
-	//index, err := bleve.New(indexName, indexMapping)
-	if err != nil {
-		return &Searcher{}, err
-	}
-	index.SetName(indexName)
+	duration := time.Since(start)
+	s.logger.Info(fmt.Sprintf("Bleve search index for %d sheets took %v to build", len(fileContents), duration))
+	return nil
+}
 
+func (s *Searcher) indexSheet(fileContent *sheets.SheetContent) error {
 	count := 0
+	index := s.BleveIndex
+	logger := s.logger
 	batch := index.NewBatch()
 
 	for i, r := range fileContent.Content {
@@ -68,7 +72,7 @@ func New(logger *ldk.Logger, indexName string, fileContent *sheets.SheetContent)
 		if batch.Size() > batchSize {
 			err := index.Batch(batch)
 			if err != nil {
-				return nil, fmt.Errorf("could not flush batch: %w", err)
+				return fmt.Errorf("could not flush batch: %w", err)
 			}
 			count += batch.Size()
 			batch = index.NewBatch()
@@ -77,19 +81,33 @@ func New(logger *ldk.Logger, indexName string, fileContent *sheets.SheetContent)
 
 		err := batch.Index(id, r)
 		if err != nil {
-			return nil, fmt.Errorf("could not create search index for row %d (overall row %d): %w", i, currentRowID, err)
+			return fmt.Errorf("could not create search index for row %d (overall row %d): %w", i, currentRowID, err)
 		}
 	}
 
 	if count > 0 {
-		err = index.Batch(batch)
+		err := index.Batch(batch)
 		if err != nil {
-			return nil, fmt.Errorf("could not flush final batch: %w", err)
+			return fmt.Errorf("could not flush final batch: %w", err)
 		}
 	}
 
-	duration := time.Since(start)
-	logger.Info(fmt.Sprintf("Bleve search index took %v to build", duration))
+	return nil
+}
+
+// New will create a blank, in-memory search index
+func New(logger *ldk.Logger, indexName string) (*Searcher, error) {
+	indexMapping, err := buildIndexMapping()
+	if err != nil {
+		return &Searcher{}, err
+	}
+
+	index, err := bleve.NewMemOnly(indexMapping)
+	if err != nil {
+		return &Searcher{}, err
+	}
+	index.SetName(indexName)
+
 	return &Searcher{
 		BleveIndex: index,
 		logger:     logger,
@@ -101,11 +119,6 @@ func (s *Searcher) DoSearch(criteria string) ([]map[string]interface{}, error) {
 
 	// string "contains" (exact) match
 	query := bleve.NewMatchPhraseQuery(criteria)
-
-	// other options:
-	//query := bleve.NewQueryStringQuery(criteria)
-	//query := bleve.NewMatchQuery(criteria)
-	//query := bleve.NewTermQuery(criteria)
 
 	searchRequest := bleve.NewSearchRequest(query)
 	searchRequest.Fields = []string{"*"} // return all fields
@@ -129,5 +142,4 @@ func (s *Searcher) DoSearch(criteria string) ([]map[string]interface{}, error) {
 	}
 
 	return results, nil
-
 }

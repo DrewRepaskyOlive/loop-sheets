@@ -117,8 +117,7 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		return nil
 	}
 
-	// FIXME only indexing the first CSV file
-	l.buildSearchIndex(l.csvPaths[0])
+	l.buildSearchIndex(l.csvPaths)
 
 	err = sidekick.UI().ListenGlobalSearch(l.ctx, l.listener)
 	if err != nil {
@@ -140,19 +139,25 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 	return nil
 }
 
-func (l *Loop) buildSearchIndex(csvFile string) error {
-	sheetContent, err := sheets.ReadCSV(csvFile)
-	if err != nil {
-		return err
-	}
-
-	l.logger.Info("parsed sheet", "filePath", csvFile, "headers", sheetContent.Headers, "rowCount", len(sheetContent.Content))
-
-	searcher, err := search.New(l.logger, searchIndexName, sheetContent)
+func (l *Loop) buildSearchIndex(csvFiles []string) error {
+	searcher, err := search.New(l.logger, searchIndexName)
 	if err != nil {
 		return err
 	}
 	l.searcher = searcher
+
+	var sheetContents []*sheets.SheetContent
+
+	for _, csvFile := range csvFiles {
+		sheetContent, err := sheets.ReadCSV(csvFile)
+		if err != nil {
+			return err
+		}
+		l.logger.Info("parsed sheet", "filePath", csvFile, "headers", sheetContent.Headers, "rowCount", len(sheetContent.Content))
+		sheetContents = append(sheetContents, sheetContent)
+	}
+
+	l.searcher.IndexSheets(sheetContents)
 
 	return nil
 }
