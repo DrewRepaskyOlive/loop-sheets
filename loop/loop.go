@@ -3,7 +3,6 @@ package loop
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/DrewRepaskyOlive/loop-sheets/search"
@@ -71,15 +70,26 @@ func (l *Loop) listener(searchCriteria string, err error) {
 		return
 	}
 
-	l.logger.Info("searchCriteria", searchCriteria)
-	l.logger.Info("results", results)
+	l.logger.Debug("results count matched in sheets", len(results))
 
 	for _, result := range results {
 		label := fmt.Sprintf("matched %q", searchCriteria)
-		markdown := fmt.Sprintf("%+v", result)
+
+		markdown := ""
+		for key, value := range result {
+			markdown += fmt.Sprintf("**%s**: %s\n  \n", key, value)
+		}
 		l.SendWhisper(label, markdown)
 	}
 }
+
+// TODO search criteria should be dynamically read, not hardcoded
+const initWhisper = `# I found these spreadsheets and will match their contents when you search within Olive Helps: 
+  
+* %s  
+
+For instance, try searching on SIDE-1752
+`
 
 func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 	l.logger.Trace("starting " + loopName)
@@ -97,6 +107,15 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 	if err != nil {
 		return err
 	}
+
+	err = sidekick.Clipboard().Listen(l.ctx, l.listener)
+	if err != nil {
+		return err
+	}
+
+	label := "Search Spreadsheets"
+	markdown := fmt.Sprintf(initWhisper, csvFilePath)
+	l.SendWhisper(label, markdown)
 	return nil
 }
 
@@ -106,21 +125,26 @@ func (l *Loop) buildSearchIndex(csvFile string) error {
 		return err
 	}
 
-	log.Printf("%+v", sheetContent.Content[0])
-	log.Printf("headers %+v", sheetContent.Headers)
-	log.Println(len(sheetContent.Headers))
-	log.Println(len(sheetContent.Content))
+	l.logger.Info("parsed sheet", "filePath", csvFile, "headers", sheetContent.Headers, "rowCount", len(sheetContent.Content))
 
 	searcher, err := search.New(l.logger, searchIndexName, sheetContent)
 	if err != nil {
 		return err
 	}
 	l.searcher = searcher
+
 	return nil
 }
 
 func (l *Loop) LoopStop() error {
 	l.logger.Trace("stopping " + loopName)
 	l.cancel()
+
+	if l.searcher != nil {
+		err := l.searcher.BleveIndex.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close BleveIndex gracefully: %w", err)
+		}
+	}
 	return nil
 }
