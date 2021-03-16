@@ -14,15 +14,17 @@ import (
 const (
 	loopName        = "loop-sheets"
 	searchIndexName = "loop-sheets-index"
-	csvFilePath     = "/Users/drewrepasky/Documents/JIRA.csv"
+	whisperLabel    = "Spreadsheet Search"
 )
 
 type Loop struct {
-	ctx      context.Context
-	cancel   context.CancelFunc
-	logger   *ldk.Logger
-	sidekick ldk.Sidekick
-	searcher *search.Searcher
+	ctx             context.Context
+	cancel          context.CancelFunc
+	logger          *ldk.Logger
+	sidekick        ldk.Sidekick
+	searcher        *search.Searcher
+	myDocumentsPath string
+	csvPaths        []string
 }
 
 func Serve() error {
@@ -73,7 +75,7 @@ func (l *Loop) listener(searchCriteria string, err error) {
 	l.logger.Debug("results count matched in sheets", len(results))
 
 	for _, result := range results {
-		label := fmt.Sprintf("matched %q", searchCriteria)
+		label := fmt.Sprintf("%s matched %q", whisperLabel, searchCriteria)
 
 		markdown := ""
 		for key, value := range result {
@@ -91,14 +93,34 @@ const initWhisper = `# I found these spreadsheets and will match their contents 
 For instance, try searching on SIDE-1752
 `
 
+const initWhisperNoFiles = "Please add .csv files to `%s` to make their contents searchable within OliveHelps"
+
 func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 	l.logger.Trace("starting " + loopName)
 	l.ctx, l.cancel = context.WithCancel(context.Background())
 	l.sidekick = sidekick
 
-	l.buildSearchIndex(csvFilePath)
+	var err error
+	l.myDocumentsPath, err = sheets.GetMyDocumentsPath()
+	if err != nil {
+		return err
+	}
 
-	err := sidekick.UI().ListenGlobalSearch(l.ctx, l.listener)
+	l.csvPaths, err = sheets.GetFilesByExtension(l.myDocumentsPath, ".csv")
+	if err != nil {
+		return err
+	}
+
+	if len(l.csvPaths) == 0 {
+		message := fmt.Sprintf(initWhisperNoFiles, l.myDocumentsPath)
+		l.SendWhisper(whisperLabel, message)
+		return nil
+	}
+
+	// FIXME only indexing the first CSV file
+	l.buildSearchIndex(l.csvPaths[0])
+
+	err = sidekick.UI().ListenGlobalSearch(l.ctx, l.listener)
 	if err != nil {
 		return err
 	}
@@ -113,9 +135,8 @@ func (l *Loop) LoopStart(sidekick ldk.Sidekick) error {
 		return err
 	}
 
-	label := "Search Spreadsheets"
-	markdown := fmt.Sprintf(initWhisper, csvFilePath)
-	l.SendWhisper(label, markdown)
+	markdown := fmt.Sprintf(initWhisper, l.csvPaths[0])
+	l.SendWhisper(whisperLabel, markdown)
 	return nil
 }
 
