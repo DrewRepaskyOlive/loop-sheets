@@ -90,8 +90,6 @@ func (l *Loop) listener(searchCriteria string, err error) {
 const initWhisper = `# I found these spreadsheets and will match their contents when you search within Olive Helps: 
   
 %s  
-
-For instance, try searching on SIDE-1752
 `
 
 const initWhisperNoFiles = "Please add .csv files to `%s` to make their contents searchable within OliveHelps"
