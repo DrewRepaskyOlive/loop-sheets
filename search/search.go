@@ -85,7 +85,7 @@ func (s *Searcher) indexSheet(fileContent *sheets.SheetContent) error {
 		}
 	}
 
-	if count > 0 {
+	if count > 0 || batch.Size() <= batchSize {
 		err := index.Batch(batch)
 		if err != nil {
 			return fmt.Errorf("could not flush final batch: %w", err)
